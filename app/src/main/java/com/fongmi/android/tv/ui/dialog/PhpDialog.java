@@ -20,6 +20,7 @@ import com.fongmi.android.tv.setting.PhpSetting;
 import com.fongmi.android.tv.utils.Notify;
 import com.fongmi.android.tv.utils.PhpAssets;
 import com.fongmi.android.tv.utils.PermissionUtil;
+import com.fongmi.android.tv.utils.Task;
 import com.fongmi.android.tv.utils.Util;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 
@@ -28,7 +29,9 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder;
  * 涉及文件访问的操作均先申请存储权限。
  *
  * <p>开关状态以服务真实运行状态（{@link PhpServer#isRunning()}）为准，
- * 避免持久化开关与进程实际状态不同步造成“开关不灵”。</p>
+ * 避免持久化开关与进程实际状态不同步造成“开关不灵”。
+ * 服务启停（含首次解压 runtime、NanoHTTPD 的 join/bind）一律放到后台线程执行，
+ * 避免阻塞主线程造成首次开启卡顿。</p>
  */
 public class PhpDialog extends DialogFragment {
 
@@ -72,16 +75,15 @@ public class PhpDialog extends DialogFragment {
         boolean wantOn = PhpSetting.isEnabled();
         syncChecked(wantOn && PhpServer.get().isRunning());
         PermissionUtil.requestFile(requireActivity(), granted -> {
-            if (!granted) return;
+            if (!granted || !isAdded()) return;
             PhpSetting.ensureDefaultRoot();
             PhpAssets.installSites();
-            App.post(() -> binding.phpRoot.setText(PhpSetting.getRoot()));
+            App.post(() -> {
+                if (isAdded()) binding.phpRoot.setText(PhpSetting.getRoot());
+            });
             // 配置为开但服务没在跑：有权限后自动恢复，保证开关与状态一致
             if (wantOn && !PhpServer.get().isRunning()) {
-                PhpServer.get().start(requireActivity());
-                syncChecked(PhpServer.get().isRunning());
-                updateAddress();
-                refreshHost();
+                startAsync();
             }
         });
     }
@@ -102,16 +104,51 @@ public class PhpDialog extends DialogFragment {
         }
     }
 
-    /** 校验并保存端口；若服务正在运行则重启使其生效 */
+    /**
+     * 校验并保存端口。只要输入框里的端口与已保存端口不同就写入并重启服务，
+     * 不再依赖 isRunning()：这样即使服务当前未运行，改端口也会被保存，
+     * 下次开启直接生效；服务正在运行时则立即用新端口重启。
+     */
     private void commitPort() {
+        if (!isAdded()) return;
         int p = parsePort(binding.phpPort.getText().toString(), PhpSetting.getPort());
         binding.phpPort.setText(String.valueOf(p));
-        // 地址始终按输入框端口显示，保证复制得到的端口与所见一致
-        binding.phpAddress.setText("http://" + com.github.catvod.utils.Util.getIp() + ":" + p + "/");
-        if (p != PhpSetting.getPort()) {
-            PhpSetting.putPort(p);
-            if (PhpServer.get().isRunning()) withPermission(() -> PhpServer.get().restart(requireActivity()));
-        }
+        binding.phpAddress.setText("http://" + Util.getIp() + ":" + p + "/");
+        if (p == PhpSetting.getPort()) return;
+        PhpSetting.putPort(p);
+        if (PhpServer.get().isRunning()) withPermission(this::restartAsync);
+        else updateAddress();
+    }
+
+    /** 后台启动服务，完成后回主线程同步开关、地址与宿主状态。 */
+    private void startAsync() {
+        Task.execute(() -> {
+            PhpServer.get().start(App.get());
+            App.post(this::syncUi);
+        });
+    }
+
+    /** 后台停止服务，完成后回主线程同步。 */
+    private void stopAsync() {
+        Task.execute(() -> {
+            PhpServer.get().stop();
+            App.post(this::syncUi);
+        });
+    }
+
+    /** 后台用当前（最新）端口重启服务，完成后回主线程同步。 */
+    private void restartAsync() {
+        Task.execute(() -> {
+            PhpServer.get().restart(App.get());
+            App.post(this::syncUi);
+        });
+    }
+
+    private void syncUi() {
+        if (!isAdded()) return;
+        syncChecked(PhpServer.get().isRunning());
+        updateAddress();
+        refreshHost();
     }
 
     private void updateAddress() {
@@ -124,8 +161,11 @@ public class PhpDialog extends DialogFragment {
             if (granted) App.post(action);
             else {
                 Notify.show(R.string.php_no_permission);
-                App.post(() -> syncChecked(false));
-                PhpSetting.putEnabled(false);
+                App.post(() -> {
+                    if (!isAdded()) return;
+                    syncChecked(false);
+                    PhpSetting.putEnabled(false);
+                });
             }
         });
     }
@@ -134,17 +174,8 @@ public class PhpDialog extends DialogFragment {
         binding.phpSwitch.setOnCheckedChangeListener((button, checked) -> {
             if (syncing) return;
             PhpSetting.putEnabled(checked);
-            if (checked) withPermission(() -> {
-                PhpServer.get().start(requireActivity());
-                syncChecked(PhpServer.get().isRunning());
-                updateAddress();
-                refreshHost();
-            });
-            else {
-                PhpServer.get().stop();
-                updateAddress();
-                refreshHost();
-            }
+            if (checked) withPermission(this::startAsync);
+            else stopAsync();
         });
         // 复制取地址文本框的实时内容：先提交端口再复制，保证端口与地址一致
         binding.phpCopy.setOnClickListener(v -> {
@@ -155,17 +186,25 @@ public class PhpDialog extends DialogFragment {
             commitPort();
             Util.copy(binding.phpAddress.getText().toString());
         });
-        // 端口输入时实时联动地址；离开输入框时校验并保存，运行中则重启服务
+        // 端口输入时实时联动地址；离开输入框或按回车时校验并保存，运行中则重启服务
         binding.phpPort.addTextChangedListener(new TextWatcher() {
             @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) { }
             @Override public void onTextChanged(CharSequence s, int start, int before, int count) { }
             @Override public void afterTextChanged(Editable s) {
                 int p = parsePort(s.toString(), PhpSetting.getPort());
-                binding.phpAddress.setText("http://" + com.github.catvod.utils.Util.getIp() + ":" + p + "/");
+                binding.phpAddress.setText("http://" + Util.getIp() + ":" + p + "/");
             }
         });
         binding.phpPort.setOnFocusChangeListener((v, hasFocus) -> {
             if (!hasFocus) commitPort();
+        });
+        binding.phpPort.setOnEditorActionListener((v, actionId, event) -> {
+            if (actionId == android.view.inputmethod.EditorInfo.IME_ACTION_DONE) {
+                commitPort();
+                binding.phpPort.clearFocus();
+                return true;
+            }
+            return false;
         });
         binding.phpChoose.setOnClickListener(v -> withPermission(() ->
                 PhpFolderDialog.create().folder(PhpSetting.getRoot()).callback(this::setRoot).show(requireActivity())));
@@ -174,13 +213,12 @@ public class PhpDialog extends DialogFragment {
     private void setRoot(String path) {
         PhpSetting.putRoot(path);
         binding.phpRoot.setText(path);
-        if (PhpSetting.isEnabled()) withPermission(() -> PhpServer.get().restart(requireActivity()));
+        if (PhpSetting.isEnabled()) withPermission(this::restartAsync);
     }
 
     @Override
     public void onStart() {
         super.onStart();
-        // 每次打开都以真实服务状态刷新开关与地址
         syncChecked(PhpServer.get().isRunning());
         updateAddress();
         refreshHost();
@@ -189,7 +227,8 @@ public class PhpDialog extends DialogFragment {
     @Override
     public void onDismiss(@NonNull DialogInterface dialog) {
         super.onDismiss(dialog);
-        // 弹窗关闭时兜底刷新宿主列表，确保右侧“开/关”与服务状态一致
+        // 关闭弹窗时兜底提交端口，避免“改了端口直接关掉 → 没保存”的问题
+        if (isAdded()) commitPort();
         refreshHost();
     }
 }

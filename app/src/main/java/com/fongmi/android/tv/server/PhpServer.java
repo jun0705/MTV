@@ -99,10 +99,10 @@ public class PhpServer {
         }
     }
 
-    /** 按当前开关状态重启服务，统一状态入口 */
+    /** 按当前配置端口重启服务：先彻底停掉再启动，供端口 / 目录变更时调用。 */
     public synchronized void restart(Context context) {
         stop();
-        if (PhpSetting.isEnabled()) start(context);
+        start(context);
     }
 
     private File findBinary() {
