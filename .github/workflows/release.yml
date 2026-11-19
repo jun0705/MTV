@@ -131,6 +131,7 @@ jobs:
           path: out/*
           retention-days: 30
 
+      # 解析 release tag
       - name: Resolve release tag
         id: tag
         env:
@@ -138,33 +139,111 @@ jobs:
           EVENT: ${{ github.event_name }}
         run: |
           if [ "$EVENT" = "workflow_dispatch" ] && [ -n "$INPUT_TAG" ]; then
-            echo "tag=$INPUT_TAG" >> "$GITHUB_OUTPUT"
+            TAG="$INPUT_TAG"
           elif [ "$EVENT" = "push" ]; then
-            echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+            TAG="${GITHUB_REF_NAME}"
           else
-            echo "tag=v5.5.6-php.b${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+            TAG="v5.5.6-php.b${{ github.run_number }}"
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Release tag: $TAG"
+
+      # ★ 删光仓库里【所有】旧 Release + 所有旧 tag，最后只留本次发布的这一版
+      - name: Delete ALL existing Releases & tags
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CURRENT_TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          set -e
+          echo ">>> 删除所有旧 Release（含 Asset）..."
+
+          # 1) 列出全部 Release，逐个删除；--cleanup-tag 顺带删掉其关联 tag
+          gh release list --limit 1000 --json tagName -q '.[].tagName' |
+          while IFS= read -r t; do
+            [ -z "$t" ] && continue
+            echo "  - delete release: $t"
+            gh release delete "$t" --yes --cleanup-tag || true
+          done
+
+          echo ">>> 删除所有遗留 tag（保留本次要发布的 $CURRENT_TAG 之外全部清空）..."
+
+          # 2) 遍历全部 tag ref，删掉“非本次”的 tag，做到只留最新一版
+          gh api --paginate "repos/${{ github.repository }}/git/refs/tags?per_page=100" \
+            -q '.[].ref' | while IFS= read -r ref; do
+            name="${ref#refs/tags/}"
+            if [ "$name" = "$CURRENT_TAG" ]; then
+              echo "  - keep (本次发布): $name"
+              continue
+            fi
+            echo "  - delete tag: $name"
+            gh api -X DELETE "repos/${{ github.repository }}/git/${ref}" || true
+          done
+
+          # 3) 兜底再删一次“同名”当前 tag（push 触发时刚推上来的那个），
+          #    让后面 action-gh-release 重新创建，避免 tag already exists
+          if gh api "repos/${{ github.repository }}/git/refs/tags/$CURRENT_TAG" >/dev/null 2>&1; then
+            echo "  - delete remote tag (将与本次 Release 一起重建): $CURRENT_TAG"
+            gh api -X DELETE "repos/${{ github.repository }}/git/refs/tags/$CURRENT_TAG" || true
           fi
 
+          # 4) 等 GitHub 异步清理生效，避免下一步 create 撞上 "tag already exists"
+          sleep 8
+
+      # 生成漂亮一点的 Release 正文
+      - name: Build pretty release notes
+        id: notes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          set -e
+          DATE="$(date -u +'%Y-%m-%d %H:%M UTC')"
+          SHORT_SHA="${GITHUB_SHA::7}"
+          REPO="${{ github.repository }}"
+          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          TV_SIZE="$(du -h out/fmx-PHP-tv-arm64.apk | cut -f1)"
+          MOBILE_SIZE="$(du -h out/fmx-PHP-mobile-arm64.apk | cut -f1)"
+
+          {
+            echo "notes<<EOF"
+            echo "## 🎬 影视 PHP 版 · $TAG"
+            echo
+            echo "本地 PHP 运行环境内置，仅支持 **arm64（64 位）** 设备。"
+            echo
+            echo "| 文件 | 平台 | 大小 |"
+            echo "|---|---|---|"
+            echo "| \`fmx-PHP-tv-arm64.apk\` | 电视版（Android TV / Leanback） | $TV_SIZE |"
+            echo "| \`fmx-PHP-mobile-arm64.apk\` | 手机版（Mobile） | $MOBILE_SIZE |"
+            echo "| \`SHA256SUMS.txt\` | SHA-256 校验 | - |"
+            echo
+            echo "### ✨ 本次构建"
+            echo "- 📅 构建时间：$DATE"
+            echo "- 🔖 Commit：[\`$SHORT_SHA\`](https://github.com/$REPO/commit/${GITHUB_SHA})"
+            echo "- 🛠️ CI Run：[#${{ github.run_number }}]($RUN_URL)"
+            echo "- 🔒 签名：固定签名（\`app/fongmi.jks\`，alias \`fongmi\`），可直接覆盖安装"
+            echo
+            echo "### 📦 安装 & 使用"
+            echo "1. 仅 **arm64** 设备可运行（32 位 armeabi-v7a 不支持 PHP 运行环境）"
+            echo "2. 安装后进入 **设置 → PHP 设置** 开启本地服务"
+            echo "3. 默认站点目录：\`/storage/emulated/0/PHP\`"
+            echo
+            echo "### ✅ 校验"
+            echo '```text'
+            cat out/SHA256SUMS.txt
+            echo '```'
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      # 发布唯一一个 Release（全新、干净）
       - name: Publish Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.tag.outputs.tag }}
-          name: FongMi PHP 版 ${{ steps.tag.outputs.tag }}
+          name: ${{ steps.tag.outputs.tag }}
+          body: ${{ steps.notes.outputs.notes }}
           prerelease: ${{ inputs.prerelease || false }}
-          generate_release_notes: true
+          make_latest: true
           fail_on_unmatched_files: true
-          body: |
-            **FongMi 5.5.6 PHP 版（本地 PHP 服务）**
-
-            | 文件 | 说明 |
-            |---|---|
-            | `fmx-PHP-tv-arm64.apk` | 电视版（leanback），64 位 |
-            | `fmx-PHP-mobile-arm64.apk` | 手机版，64 位 |
-            | `SHA256SUMS.txt` | 校验值 |
-
-            - 仅 arm64：内置本地 PHP 运行环境（arm64），32 位不支持
-            - 设置 → 「PHP 设置」开启服务，默认目录 `/storage/emulated/0/PHP`
-            - 固定签名（app/fongmi.jks，alias `fongmi`），可直接覆盖安装
           files: |
             out/fmx-PHP-tv-arm64.apk
             out/fmx-PHP-mobile-arm64.apk
