@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- OK 影视风格：首页顶部固定站点 Tab 项（对齐 OK 3.2.7 的 adapter_site.xml）
+     OK 影视版收紧尺寸：高 48->34dp、左右内边距 16->14dp、字号 18->15sp，
+     与 APK 注入层 OkLayoutProvider.fillTabs() 的运行时样式保持一致。 -->
+<androidx.appcompat.widget.LinearLayoutCompat xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="wrap_content"
+    android:layout_height="34dp"
+    android:background="@drawable/selector_item_round"
+    android:focusable="true"
+    android:focusableInTouchMode="true"
+    android:gravity="center_vertical"
+    android:orientation="horizontal"
+    android:paddingStart="14dp"
+    android:paddingEnd="14dp">
+
+    <com.google.android.material.textview.MaterialTextView
+        android:id="@+id/text"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:ellipsize="marquee"
+        android:singleLine="true"
+        android:textColor="@color/white"
+        android:textSize="15sp"
+        tools:text="站点名称" />
+
+</androidx.appcompat.widget.LinearLayoutCompat>

@@ -1,0 +1,171 @@
+name: Build PHP APK & Release
+
+on:
+  # 手动触发：可填 tag，留空则自动生成
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag（留空自动生成，例如 v5.5.6-php）"
+        required: false
+        default: ""
+      prerelease:
+        description: "标记为预发布"
+        type: boolean
+        required: false
+        default: false
+  # 推 v 开头的 tag 也会自动构建发布
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      # Chaquopy 的 buildPython 必须是 3.10（chaquo/build.gradle 里写死 version = "3.10"）
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Locate Python 3.10 for Chaquopy
+        run: |
+          PY="$(command -v python3.10 || command -v python3)"
+          "$PY" -V
+          echo "CHAQUOPY_BUILD_PYTHON=$PY" >> "$GITHUB_ENV"
+
+      # 只准备 sdkmanager 和许可证，不装任何包，避免 Action 默认去装已下架的 'tools'
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: ''
+
+      # compileSdk/targetSdk = 37。先试标准包名 android-37，缺失再回退 android-37.0。
+      - name: Install SDK platform & build-tools
+        run: |
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+          sdkmanager "build-tools;37.0.0"
+          sdkmanager "platforms;android-37" || sdkmanager "platforms;android-37.0"
+
+      - name: Gradle cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('**/*.gradle', 'gradle/libs.versions.toml', 'gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: |
+            gradle-${{ runner.os }}-
+
+      # 本地源码的 wrapper 走腾讯云镜像（国内构建快），CI 在海外需换成官方源，
+      # 否则 gradle-9.6.1-bin.zip 从国内镜像拉取会超时/失败。
+      - name: Use official Gradle distribution on CI
+        run: |
+          sed -i 's#distributionUrl=.*gradle-#distributionUrl=https\\://services.gradle.org/distributions/gradle-#g' gradle/wrapper/gradle-wrapper.properties
+          grep distributionUrl gradle/wrapper/gradle-wrapper.properties
+
+      # 网页拖拽等方式上传仓库容易漏掉二进制文件，导致
+      # "Could not find or load main class org.gradle.wrapper.GradleWrapperMain"。
+      # 兜底：wrapper jar 缺失/为空时，按 gradle-wrapper.properties 里的版本从官方仓库补齐
+      - name: Ensure Gradle wrapper jar
+        run: |
+          VERSION="$(sed -n 's/^distributionUrl=.*gradle-\([0-9][0-9.]*\)-.*$/\1/p' gradle/wrapper/gradle-wrapper.properties)"
+          VERSION="${VERSION:-9.6.1}"
+          JAR="gradle/wrapper/gradle-wrapper.jar"
+          if [ ! -s "$JAR" ]; then
+            echo "wrapper jar missing, fetching gradle $VERSION"
+            curl -fsSL -o "$JAR" "https://raw.githubusercontent.com/gradle/gradle/v$VERSION/gradle/wrapper/gradle-wrapper.jar"
+          fi
+          ls -la gradle/wrapper/
+
+      # 只构建 arm64：PHP 运行环境 php_runtime.zip 是纯 arm64(ELF64 AArch64)，
+      # 32 位 armeabi-v7a 无法运行 PHP，故不出 32 位包。
+      # 电视版 leanback + 手机版 mobile 都构建。
+      - name: Build release APKs
+        run: |
+          chmod +x gradlew
+          ./gradlew \
+            assembleLeanbackArm64_v8aRelease \
+            assembleMobileArm64_v8aRelease \
+            --no-daemon --stacktrace
+
+      - name: Collect & verify
+        run: |
+          set -e
+          mkdir -p out
+          cp app/build/outputs/apk/leanbackArm64_v8a/release/leanback-arm64_v8a.apk "out/fmx-PHP-tv-arm64.apk"
+          cp app/build/outputs/apk/mobileArm64_v8a/release/mobile-arm64_v8a.apk "out/fmx-PHP-mobile-arm64.apk"
+
+          APKSIGNER="$ANDROID_HOME/build-tools/37.0.0/apksigner"
+          for apk in out/*.apk; do
+            echo "== $apk"
+            "$APKSIGNER" verify --print-certs "$apk" | grep -E "SHA-1|SHA-256" || true
+          done
+
+          cd out
+          sha256sum *.apk > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: apk-php-${{ github.run_number }}
+          path: out/*
+          retention-days: 30
+
+      - name: Resolve release tag
+        id: tag
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          if [ "$EVENT" = "workflow_dispatch" ] && [ -n "$INPUT_TAG" ]; then
+            echo "tag=$INPUT_TAG" >> "$GITHUB_OUTPUT"
+          elif [ "$EVENT" = "push" ]; then
+            echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=v5.5.6-php.b${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Publish Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          name: FongMi PHP 版 ${{ steps.tag.outputs.tag }}
+          prerelease: ${{ inputs.prerelease || false }}
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          body: |
+            **FongMi 5.5.6 PHP 版（本地 PHP 服务）**
+
+            | 文件 | 说明 |
+            |---|---|
+            | `fmx-PHP-tv-arm64.apk` | 电视版（leanback），64 位 |
+            | `fmx-PHP-mobile-arm64.apk` | 手机版，64 位 |
+            | `SHA256SUMS.txt` | 校验值 |
+
+            - 仅 arm64：内置本地 PHP 运行环境（arm64），32 位不支持
+            - 设置 → 「PHP 设置」开启服务，默认目录 `/storage/emulated/0/PHP`
+            - 固定签名（app/fongmi.jks，alias `fongmi`），可直接覆盖安装
+          files: |
+            out/fmx-PHP-tv-arm64.apk
+            out/fmx-PHP-mobile-arm64.apk
+            out/SHA256SUMS.txt

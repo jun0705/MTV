@@ -1,0 +1,158 @@
+plugins {
+    alias libs.plugins.android.application
+}
+
+// 签名：优先用 app/fongmi.jks（纯手动签名，随源码提交，CI 无需任何 Secrets）；
+// 该文件不存在时才回退到 local.properties，保证本地历史用法不受影响。
+def localProps = new Properties()
+def localFile = rootProject.file('local.properties')
+if (localFile.exists()) localFile.withInputStream { localProps.load(it) }
+
+def keystore = file('fongmi.jks')
+def manualSign = keystore.exists()
+
+android {
+    namespace = 'com.fongmi.android.tv'
+
+    compileSdk libs.versions.compileSdk.get().toInteger()
+
+    defaultConfig {
+        applicationId "com.fongmi.android.tv"
+        minSdk libs.versions.minSdk.get().toInteger()
+        targetSdk libs.versions.targetSdk.get().toInteger()
+        versionCode 202611
+        versionName "1.0.1"
+        javaCompileOptions {
+            annotationProcessorOptions {
+                arguments = ["room.schemaLocation": "$projectDir/schemas".toString(), "eventBusIndex": "com.fongmi.android.tv.event.EventIndex"]
+            }
+        }
+    }
+
+    flavorDimensions = ["mode", "abi"]
+
+    productFlavors {
+        leanback {
+            dimension "mode"
+        }
+        mobile {
+            dimension "mode"
+        }
+        arm64_v8a {
+            dimension "abi"
+            ndk { abiFilters "arm64-v8a" }
+        }
+        armeabi_v7a {
+            dimension "abi"
+            ndk { abiFilters "armeabi-v7a" }
+        }
+    }
+
+    buildFeatures {
+        buildConfig = true
+        viewBinding = true
+    }
+
+    // PHP 运行环境：libphp.so 需安装到 nativeLibraryDir 以便 exec()，
+    // 依赖的动态库从 assets 解压到应用私有目录、经 LD_LIBRARY_PATH 加载。
+    packagingOptions {
+        jniLibs {
+            useLegacyPackaging = true
+        }
+    }
+
+    signingConfigs {
+        release {
+            if (manualSign) {
+                storeFile keystore
+                storePassword "fongmi123"
+                keyAlias "fongmi"
+                keyPassword "fongmi123"
+            } else {
+                storeFile file(localProps['storeFile'])
+                keyAlias localProps['keyAlias']
+                keyPassword localProps['storePassword']
+                storePassword localProps['storePassword']
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled = true
+            shrinkResources = true
+            signingConfig = signingConfigs.release
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro', 'proguard-rules-media.pro'
+        }
+    }
+
+    configurations.configureEach {
+        exclude group: 'stax', module: 'stax-api'
+        exclude group: 'xpp3', module: 'xpp3'
+        exclude group: 'com.android.support'
+        resolutionStrategy {
+            force libs.okhttp
+        }
+    }
+
+    lint {
+        disable 'UnsafeOptInUsageError'
+        disable 'ExpiredTargetSdkVersion'
+    }
+
+    compileOptions {
+        coreLibraryDesugaringEnabled = true
+        sourceCompatibility JavaVersion.VERSION_21
+        targetCompatibility JavaVersion.VERSION_21
+    }
+}
+
+androidComponents {
+    onVariants(selector().withBuildType('release')) { variant ->
+        def flavors = variant.productFlavors.collectEntries { [(it.first): it.second] }
+        def mode = flavors['mode'] ?: 'mode'
+        def abi = flavors['abi'] ?: 'abi'
+        variant.outputs.each { output ->
+            output.outputFileName.set("${mode}-${abi}.apk")
+        }
+    }
+}
+
+dependencies {
+    implementation fileTree(dir: "libs", include: ["*.aar"])
+    implementation project(':catvod')
+    implementation project(':chaquo')
+    implementation project(':quickjs')
+    implementation libs.appcompat
+    implementation libs.lifecycle.service
+    implementation libs.media
+    implementation libs.palette
+    implementation libs.recyclerview
+    implementation libs.room.runtime
+    implementation libs.splashscreen
+    implementation libs.swiperefreshlayout
+    implementation libs.viewpager2
+    implementation libs.android.gif.drawable
+    implementation libs.bundles.glide
+    implementation libs.bundles.jupnp
+    implementation libs.customactivityoncrash
+    implementation libs.eventbus
+    implementation libs.flexbox
+    implementation libs.rtmp.client
+    implementation libs.lottie
+    implementation libs.material
+    implementation libs.materialdesigncolors
+    implementation libs.nanohttpd
+    implementation libs.newpipeextractor
+    implementation libs.permissionx
+    implementation libs.simple.xml
+    implementation libs.textdrawable
+    leanbackImplementation libs.leanback
+    leanbackImplementation libs.androidautosize
+    mobileImplementation libs.biometric
+    mobileImplementation libs.zxing.android.embedded
+    annotationProcessor libs.room.compiler
+    annotationProcessor libs.eventbus.annotation.processor
+    annotationProcessor libs.glide.compiler
+    coreLibraryDesugaring libs.desugar
+}

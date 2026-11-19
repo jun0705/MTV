@@ -1,0 +1,151 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.appcompat.widget.LinearLayoutCompat xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:paddingStart="24dp"
+    android:paddingTop="24dp"
+    android:paddingEnd="24dp"
+    android:paddingBottom="32dp">
+
+    <com.google.android.material.textview.MaterialTextView
+        android:id="@+id/phpTitle"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="12dp"
+        android:text="@string/php_settings"
+        android:textColor="?attr/colorOnSurface"
+        android:textSize="22sp"
+        android:textStyle="bold" />
+
+    <!-- 开关 -->
+    <androidx.appcompat.widget.LinearLayoutCompat
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="8dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <com.google.android.material.textview.MaterialTextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="@string/php_enable"
+            android:textColor="?attr/colorOnSurface"
+            android:textSize="16sp" />
+
+        <com.google.android.material.materialswitch.MaterialSwitch
+            android:id="@+id/phpSwitch"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content" />
+
+    </androidx.appcompat.widget.LinearLayoutCompat>
+
+    <!-- 端口 -->
+    <androidx.appcompat.widget.LinearLayoutCompat
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="8dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <com.google.android.material.textview.MaterialTextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginEnd="12dp"
+            android:text="@string/php_port"
+            android:textColor="?attr/colorOnSurface"
+            android:textSize="16sp" />
+
+        <com.google.android.material.textfield.TextInputEditText
+            android:id="@+id/phpPort"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:imeOptions="actionDone"
+            android:inputType="number"
+            android:maxLength="5"
+            android:singleLine="true"
+            tools:text="8080" />
+
+    </androidx.appcompat.widget.LinearLayoutCompat>
+
+    <!-- 地址 -->
+    <androidx.appcompat.widget.LinearLayoutCompat
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="8dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <com.google.android.material.textview.MaterialTextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="@string/php_address"
+            android:textColor="?attr/colorOnSurface"
+            android:textSize="16sp" />
+
+        <com.google.android.material.textview.MaterialTextView
+            android:id="@+id/phpAddress"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginEnd="12dp"
+            android:ellipsize="middle"
+            android:maxWidth="180dp"
+            android:singleLine="true"
+            android:textColor="?attr/colorPrimary"
+            android:textSize="14sp"
+            tools:text="http://192.168.1.1:8080" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/phpCopy"
+            style="@style/Widget.MaterialComponents.Button.TextButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:minWidth="0dp"
+            android:paddingStart="8dp"
+            android:paddingEnd="8dp"
+            android:text="@string/php_copy" />
+
+    </androidx.appcompat.widget.LinearLayoutCompat>
+
+    <!-- 目录 -->
+    <com.google.android.material.textview.MaterialTextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:text="@string/php_root"
+        android:textColor="?attr/colorOnSurface"
+        android:textSize="16sp" />
+
+    <com.google.android.material.textview.MaterialTextView
+        android:id="@+id/phpRoot"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:ellipsize="middle"
+        android:singleLine="true"
+        android:textColor="?attr/colorPrimary"
+        android:textSize="13sp"
+        tools:text="/storage/emulated/0/PHP" />
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/phpChoose"
+        style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:text="@string/php_choose_folder" />
+
+    <com.google.android.material.textview.MaterialTextView
+        android:id="@+id/phpHint"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:text="@string/php_hint"
+        android:textColor="?attr/colorOnSurfaceVariant"
+        android:textSize="12sp" />
+
+</androidx.appcompat.widget.LinearLayoutCompat>

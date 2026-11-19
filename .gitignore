@@ -1,0 +1,25 @@
+.idea
+.vscode
+.gradle
+.settings
+*build
+*.jks
+*.properties
+lib-*.aar
+/Release
+/docs
+
+# ---- 以下必须随源码提交，CI 编译/签名要用 ----
+# workflow 本身（父目录 .github 整体忽略，这里单独放行 workflows）
+.github/*
+!.github/workflows/
+
+# 手动签名证书：放在 app 目录下，纯手动签名，CI 不读任何 Secrets
+!app/fongmi.jks
+
+# 与 media3 同批自编译的 mpv 播放器 AAR（被上面的 lib-*.aar 误伤）
+!app/libs/lib-mpvplayer-release.aar
+
+# Gradle 构建参数与 wrapper 配置（被 *.properties 误伤）
+!gradle.properties
+!gradle/wrapper/gradle-wrapper.properties
