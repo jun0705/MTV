@@ -1,147 +1,81 @@
-# 開發者文件
+# 影视（TV）
 
-基於 [CatVod](https://github.com/CatVodTVOfficial/CatVodTVJarLoader) 的開源 Android 影音應用程式，同時支援 **Android TV 大螢幕**與**手機**兩種使用情境，並且透過外部配置靈活擴展內容。
+一款开源的 Android 影音应用，基于 [CatVod](https://github.com/CatVodTVOfficial/CatVodTVJarLoader) 构建，**同时适配 Android TV 大屏和手机**两种使用场景。应用本身不内置片源，内容通过外部配置（订阅）灵活扩展，由你自行决定看什么、怎么看。
 
-[討論群組](https://t.me/fongmi_official) | [發布頻道](https://t.me/fongmi_release)
-
-[![Star History Chart](https://api.star-history.com/svg?repos=FongMi/TV&type=Date)](https://www.star-history.com/#FongMi/TV&Date)
+> 本项目为开源学习用途，请遵守所在地区的法律法规，仅用于访问你有权使用的合法内容源。
 
 ---
 
-## 目錄
+## 它有什么
 
-- [專案架構](#專案架構)
-- [播放器](#播放器)
-- [點播功能](#點播功能)
-- [直播功能](#直播功能)
-- [爬蟲引擎](#爬蟲引擎)
-- [網路功能](#網路功能)
-- [DLNA 投放](#dlna-投放)
-- [Android Auto](#android-auto)
-- [遠端控制](#遠端控制)
-- [配置說明](#配置說明)
-- [延伸閱讀](#延伸閱讀)
+- **双端体验**：同一套核心，电视版用遥控器操作，手机版支持手势（亮度 / 音量 / 进度）、上下滑动切集、屏幕旋转与锁定
+- **点播**：多站点分类浏览与筛选（年份 / 地区 / 类型等）、多站点并行搜索、关键词自动繁转简、播放失败自动换源
+- **直播**：支持 M3U / TXT / JSON 直播源，带 EPG 节目单（`.gz`）、频道收藏、分组密码保护，以及追看 / 时移
+- **记录**：观看历史（保留 60 天）、收藏夹、无痕模式
+- **强播放器**：ExoPlayer（Media3）+ FFmpeg 软解，硬软解自动切换；弹幕、外挂字幕（SRT / SSA / ASS）、倍速、画中画、后台播放、片头片尾跳过
+- **网络能力**：DoH、HTTP / HTTPS / SOCKS 代理、Hosts 覆盖、广告拦截、WebView 嗅探
+- **投屏**：手机可作为投放端（DLNA DMC），电视可作为接收端（DLNA DMR）
+- **扩展**：支持用 Java / JavaScript / Python 编写爬虫插件，灵活接入不同站点
+- **远程控制**：内置本地 HTTP 服务，可远程控制播放、推送字幕 / 弹幕、多设备同步
 
 ---
 
-## 專案架構
+## 快速开始
 
-| 項目      | 值                             |
-|---------|-------------------------------|
-| package | `com.fongmi.android.tv`       |
-| minSdk  | 24（Android 7.0 Nougat）        |
-| abi     | `arm64-v8a`、`armeabi-v7a`     |
-| flavor  | `leanback`（電視版）、`mobile`（手機版） |
+1. 前往项目的 [Releases](https://github.com/jun0705/MTV/releases) 下载对应版本 APK：
+   - 电视选 `leanback` 版本，手机选 `mobile` 版本
+   - 按芯片架构选 `arm64-v8a`（主流）或 `armeabi-v7a`
+2. 在设备上安装 APK。
+3. 首次打开后，进入**设置**，填入你的点播 / 直播配置地址（订阅链接），即可开始使用。
 
-```
-TV/
-├── app/            主應用程式（含兩套 UI Flavor）
-├── catvod/         爬蟲抽象層（Spider 介面、OkHttp 網路棧）
-├── quickjs/        QuickJS JavaScript 引擎
-├── chaquo/         Chaquopy Python 引擎
-```
-
-`app/src/main/` 為兩個版本共用的業務邏輯，`app/src/leanback/` 與 `app/src/mobile/` 各自實作對應 UI。
+> 应用只负责"播放与展示"，不提供任何片源。你需要自行准备合法的配置订阅。
 
 ---
 
-## 播放器
+## 从哪里获取配置
 
-- **核心**：ExoPlayer（Media3）+ FFmpeg 軟解，硬解 / 軟解自動降級切換
-- **渲染**：SurfaceView / TextureView
-- **DRM**：Widevine、PlayReady、ClearKey，支援 `#KODIPROP` 宣告
-- **彈幕**：DanmakuFlameMaster，與播放時間軸精確同步，支援遠端推送
-- **字幕**：SRT / SSA / ASS 外掛字幕、系統 CaptioningManager、遠端即時注入
-- **其他**：倍速、多縮放比例、畫中畫（PiP）、背景音訊、片頭 / 片尾自動跳過
+应用通过外部配置驱动，配置地址在**设置**中填写。配置中包含：
 
----
+- **点播站点**与解析规则
+- **直播来源**
+- DoH、代理、Hosts、广告拦截等网络选项
 
-## 點播功能
-
-- 多站點分類瀏覽，Filter 篩選（年份 / 地區 / 類型等）
-- 多站點**並行搜尋**，關鍵字自動繁轉簡提升相容性
-- 播放失敗自動換源：解析器 → 線路 → 搜尋其他站 → 下一站點
-- 觀看記錄（保留 60 天）、收藏、無痕模式
-- 電視版使用遙控器操作；手機版支援手勢（亮度 / 音量 / 進度）、上下滑切集、螢幕旋轉與鎖定
+配置可以是在线链接，也可以是本地文件。具体的字段写法属于进阶内容，建议加入讨论群交流。
 
 ---
 
-## 直播功能
+## 使用提示
 
-- 支援 M3U、TXT（`#genre#` 分組）、JSON 三種直播源格式
-- **EPG**：XMLTV 格式（支援 `.gz`），每 6 小時自動刷新
-- **追看 / 時移**：`append`、`pltv` 等多種類型
-- 頻道收藏、隱藏分組密碼保護
-- 特殊引擎：TVBus、ForceTech
-
----
-
-## 爬蟲引擎
-
-支援三種語言撰寫爬蟲：
-
-- Java JAR（DexClassLoader）
-- JavaScript（QuickJS）
-- Python（Chaquopy）
-
-透過 `api` 欄位指定爬蟲，`ext` 欄位傳入初始化參數。完整 API 規格見 [SPIDER.md](docs/SPIDER.md)。
+- **电视端**：用遥控器聚焦操作，长按配置项可编辑；设置里有备份 / 恢复，换机时可迁移配置
+- **手机端**：播放时左右滑动调进度、上下滑动调亮度 / 音量，支持双指缩放与屏幕锁定
+- **看直播**：在设置中导入直播源（M3U / TXT / JSON），即可看到频道列表与节目单
+- **放不了 / 换源**：播放失败时应用会依次尝试解析器、其他线路、搜索同名资源和其他站点
 
 ---
 
-## 網路功能
+## 常见问题
 
-- **DoH**：DNS over HTTPS，支援 Bootstrap IP
-- **代理**：HTTP / HTTPS / SOCKS4 / SOCKS5，依 host 正則規則動態選擇
-- **Hosts**：DNS 解析覆蓋，支援萬用字元 `*`
-- **CORS 注入**：依 host 規則在回應中注入自訂標頭
-- **廣告攔截**：`ads` 黑名單，符合域名直接攔截
-- **WebView 嗅探**：Sniffer 以 regex 攔截媒體 URL；支援 UA 偽裝
+**应用里为什么没有内容？**
+应用本身不含片源，需要在设置中填入有效的配置订阅后才能看到站点与频道。
 
----
+**电视和手机装哪个？**
+按设备选：电视 / 盒子用 `leanback`，手机 / 平板用 `mobile`；架构一般选 `arm64-v8a`。
 
-## DLNA 投放
-
-- **DMC（投放端）**：手機版，掃描區域網路 DLNA 設備並投放媒體
-- **DMR（被投放端）**：電視版，作為 DLNA Renderer 接收其他設備投放
-
-使用 JUPnP 3.0.4（UPnP），支援 play / pause / stop / seek / next / repeat 控制，可傳遞自訂 HTTP 標頭（User-Agent、Referer 等）至目標串流。
+**配置从哪来？**
+配置由使用者自行提供，可从社区交流获取，或按格式自己编写。项目不做任何内容分发。
 
 ---
 
-## Android Auto
+## 社区与支持
 
-電視版支援 Android Auto，PlaybackService 實作 MediaLibraryService，可在車機上瀏覽播放記錄與直播頻道：
+- [讨论群组](https://t.me/fongmi_official) — 使用交流、问题求助
+- [发布频道](https://t.me/fongmi_release) — 版本更新通知
+- [GitHub Issues](https://github.com/jun0705/MTV/issues) — 反馈问题与建议
 
-- **點播**：歷史記錄條目可直接續播，恢復上次進度
-- **直播**：依分組瀏覽頻道，可直接選台
-- **播放控制**：支援車機端 play / pause / prev / next / stop
-- **懶加載**：App 退出後 Auto 仍保持連線，配置自動重新載入
-
----
-
-## 遠端控制
-
-應用啟動後綁定本地 HTTP 伺服器（NanoHTTPD），埠號從 **9978** 起自動偵測至 **9998**，可用於播放控制、推送字幕 / 彈幕、多裝置同步等。完整端點說明見 [LOCAL.md](docs/LOCAL.md)。
+如果这个项目对你有帮助，欢迎点个 Star。
 
 ---
 
-## 配置說明
+## 关于本项目
 
-Vod 配置為應用主要入口，透過 URL 或本地路徑載入，頂層欄位定義：
-
-- 點播站點（`sites`）、解析規則（`parses`）
-- 直播來源（`lives`）
-- 網路設定（`doh`、`proxy`、`hosts`、`ads`）
-
-Live 配置可內嵌或獨立存放。完整欄位說明見 [CONFIG.md](docs/CONFIG.md)。
-
----
-
-## 延伸閱讀
-
-| 文件                          | 說明                   |
-|-----------------------------|----------------------|
-| [CONFIG.md](docs/CONFIG.md) | Vod / Live 完整配置欄位說明  |
-| [SPIDER.md](docs/SPIDER.md) | Spider 所有方法規格與回傳格式   |
-| [LOCAL.md](docs/LOCAL.md)   | 本地 HTTP API 所有端點完整說明 |
-| [LIVE.md](docs/LIVE.md)     | 直播來源格式完整說明           |
+本项目为开源项目，采用 [GPL-3.0 许可证](LICENSE.md)。技术栈与实现基于 [CatVod](https://github.com/CatVodTVOfficial/CatVodTVJarLoader) 等开源项目，感谢上游社区的努力。本项目仅供技术学习与个人合法使用，开发者不对使用者的行为承担责任。
