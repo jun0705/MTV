@@ -1,7 +1,8 @@
 <resources xmlns:xliff="http://schemas.android.com/apk/res-auto">
 
     <!-- App -->
-    <string name="app_name">TV</string>
+    <string name="app_name">M影视</string>
+	<string name="display_version">1.0.1</string>
 
     <!-- Live -->
     <string name="live_pass">Pass</string>
