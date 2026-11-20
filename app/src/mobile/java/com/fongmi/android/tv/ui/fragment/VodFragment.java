@@ -60,6 +60,7 @@ public class VodFragment extends BaseFragment implements ConfigListener, SiteLis
     private SiteViewModel mViewModel;
     private TypeAdapter mAdapter;
     private Result mResult;
+    private long mLastRefresh;
 
     public static VodFragment newInstance() {
         return new VodFragment();
@@ -97,6 +98,7 @@ public class VodFragment extends BaseFragment implements ConfigListener, SiteLis
     protected void initEvent() {
         mBinding.top.setOnClickListener(this::onTop);
         mBinding.logo.setOnClickListener(this::onLogo);
+        mBinding.logo.setOnLongClickListener(this::onLogoLong);
         mBinding.link.setOnClickListener(this::onLink);
         mBinding.title.setOnClickListener(this::onSite);
         mBinding.filter.setOnClickListener(this::onFilter);
@@ -174,6 +176,26 @@ public class VodFragment extends BaseFragment implements ConfigListener, SiteLis
 
     private void onLogo(View view) {
         HistoryDialog.create().vod().readOnly().show(this);
+    }
+
+    /** 长按左上角图标刷新接口：重新拉取当前点播配置并重建首页（对应电视版长按「首页」）。 */
+    private boolean onLogoLong(View view) {
+        long now = System.currentTimeMillis();
+        if (now - mLastRefresh < 1500) return true;
+        mLastRefresh = now;
+        Notify.show("正在刷新接口…");
+        VodConfig.load(getConfig() == null ? Config.vod() : getConfig(), new Callback() {
+            @Override
+            public void success() {
+                RefreshEvent.home();
+            }
+
+            @Override
+            public void error(String msg) {
+                Notify.show(msg);
+            }
+        });
+        return true;
     }
 
     private void onSite(View view) {
